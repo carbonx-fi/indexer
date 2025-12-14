@@ -1,12 +1,10 @@
 import { createConfig } from "ponder";
-import { http } from "viem";
 
 // Import ABIs
 import CarbonCreditTokenAbi from "./abis/CarbonCreditToken.json";
 import GuardianNFTAbi from "./abis/GuardianNFT.json";
 import CarbonOrderBookAbi from "./abis/CarbonOrderBook.json";
 import CarbonPoolFactoryAbi from "./abis/CarbonPoolFactory.json";
-import CarbonAMMPoolAbi from "./abis/CarbonAMMPool.json";
 import KYCServiceManagerAbi from "./abis/KYCServiceManager.json";
 
 // Deployed contract addresses on Mantle Sepolia (Chain 5003)
@@ -19,16 +17,11 @@ const POOL_FACTORY = "0xAECB3a3a5b32161c77a67Fe5E1Ed89dDF0FC0884" as const;
 // Start block for indexing (approximate deployment block)
 const START_BLOCK = 18000000;
 
-// Find PoolCreated event in factory ABI
-const poolCreatedEvent = (CarbonPoolFactoryAbi as any[]).find(
-  (item) => item.type === "event" && item.name === "PoolCreated"
-);
-
 export default createConfig({
   chains: {
     mantleSepolia: {
       id: 5003,
-      rpc: process.env.PONDER_RPC_URL_5003,
+      rpc: process.env.PONDER_RPC_URL_5003 || "https://rpc.sepolia.mantle.xyz",
     },
   },
   contracts: {
@@ -62,16 +55,7 @@ export default createConfig({
       address: POOL_FACTORY,
       startBlock: START_BLOCK,
     },
-    // AMM Pools are created dynamically via factory
-    CarbonAMMPool: {
-      chain: "mantleSepolia",
-      abi: CarbonAMMPoolAbi as any,
-      factory: {
-        address: POOL_FACTORY,
-        event: poolCreatedEvent,
-        parameter: "pool",
-      },
-      startBlock: START_BLOCK,
-    },
+    // Note: AMM Pool events are tracked via CarbonPoolFactory:PoolCreated
+    // Individual pool indexing can be added later if needed
   },
 });

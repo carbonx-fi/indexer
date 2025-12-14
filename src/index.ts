@@ -220,7 +220,7 @@ ponder.on("GuardianNFT:GuardianMinted", async ({ event, context }) => {
   });
 });
 
-ponder.on("GuardianNFT:TierUpgraded", async ({ event, context }) => {
+ponder.on("GuardianNFT:GuardianUpgraded", async ({ event, context }) => {
   const { tokenId, previousTier, newTier, totalRetired } = event.args;
 
   // Update guardian
@@ -242,7 +242,7 @@ ponder.on("GuardianNFT:TierUpgraded", async ({ event, context }) => {
   });
 });
 
-ponder.on("GuardianNFT:NicknameSet", async ({ event, context }) => {
+ponder.on("GuardianNFT:NicknameUpdated", async ({ event, context }) => {
   const { tokenId, nickname } = event.args;
 
   await context.db.update(schema.guardian, { id: tokenId }).set({
@@ -354,186 +354,6 @@ ponder.on("CarbonPoolFactory:PoolCreated", async ({ event, context }) => {
 });
 
 // ============ AMM Pool Events ============
-
-ponder.on("CarbonAMMPool:LiquidityAdded", async ({ event, context }) => {
-  const { provider, carbonAmount, quoteAmount, lpTokens } = event.args;
-  const poolAddress = event.log.address;
-
-  // Update pool
-  const pool = await context.db.find(schema.pool, { id: poolAddress });
-  if (pool) {
-    const newReserveCarbon = pool.reserveCarbon + carbonAmount;
-    const newReserveQuote = pool.reserveQuote + quoteAmount;
-    const newSpotPrice = newReserveCarbon > 0n
-      ? (newReserveQuote * 10n ** 18n) / newReserveCarbon
-      : 0n;
-
-    await context.db.update(schema.pool, { id: poolAddress }).set({
-      reserveCarbon: newReserveCarbon,
-      reserveQuote: newReserveQuote,
-      totalSupply: pool.totalSupply + lpTokens,
-      spotPrice: newSpotPrice,
-      lastUpdated: event.block.timestamp,
-    });
-  }
-
-  // Update or create liquidity position
-  const positionId = `${poolAddress}-${provider}`;
-  let position = await context.db.find(schema.liquidityPosition, { id: positionId });
-  if (!position) {
-    await context.db.insert(schema.liquidityPosition).values({
-      id: positionId,
-      pool: poolAddress,
-      provider,
-      lpTokens,
-      carbonDeposited: carbonAmount,
-      quoteDeposited: quoteAmount,
-      carbonWithdrawn: 0n,
-      quoteWithdrawn: 0n,
-    });
-  } else {
-    await context.db.update(schema.liquidityPosition, { id: positionId }).set({
-      lpTokens: position.lpTokens + lpTokens,
-      carbonDeposited: position.carbonDeposited + carbonAmount,
-      quoteDeposited: position.quoteDeposited + quoteAmount,
-    });
-  }
-
-  // Create liquidity event
-  const eventId = `${event.transaction.hash}-${event.log.logIndex}`;
-  await context.db.insert(schema.liquidityEvent).values({
-    id: eventId,
-    pool: poolAddress,
-    provider,
-    eventType: "add",
-    carbonAmount,
-    quoteAmount,
-    lpTokens,
-    timestamp: event.block.timestamp,
-    txHash: event.transaction.hash,
-  });
-
-  // Update user stats
-  const user = await getOrCreateUser(context, provider, event.block.timestamp);
-  await context.db.update(schema.user, { id: provider }).set({
-    totalLiquidityProvided: user.totalLiquidityProvided + quoteAmount,
-    lastActiveAt: event.block.timestamp,
-  });
-});
-
-ponder.on("CarbonAMMPool:LiquidityRemoved", async ({ event, context }) => {
-  const { provider, carbonAmount, quoteAmount, lpTokens } = event.args;
-  const poolAddress = event.log.address;
-
-  // Update pool
-  const pool = await context.db.find(schema.pool, { id: poolAddress });
-  if (pool) {
-    const newReserveCarbon = pool.reserveCarbon - carbonAmount;
-    const newReserveQuote = pool.reserveQuote - quoteAmount;
-    const newSpotPrice = newReserveCarbon > 0n
-      ? (newReserveQuote * 10n ** 18n) / newReserveCarbon
-      : 0n;
-
-    await context.db.update(schema.pool, { id: poolAddress }).set({
-      reserveCarbon: newReserveCarbon,
-      reserveQuote: newReserveQuote,
-      totalSupply: pool.totalSupply - lpTokens,
-      spotPrice: newSpotPrice,
-      lastUpdated: event.block.timestamp,
-    });
-  }
-
-  // Update liquidity position
-  const positionId = `${poolAddress}-${provider}`;
-  const position = await context.db.find(schema.liquidityPosition, { id: positionId });
-  if (position) {
-    await context.db.update(schema.liquidityPosition, { id: positionId }).set({
-      lpTokens: position.lpTokens - lpTokens,
-      carbonWithdrawn: position.carbonWithdrawn + carbonAmount,
-      quoteWithdrawn: position.quoteWithdrawn + quoteAmount,
-    });
-  }
-
-  // Create liquidity event
-  const eventId = `${event.transaction.hash}-${event.log.logIndex}`;
-  await context.db.insert(schema.liquidityEvent).values({
-    id: eventId,
-    pool: poolAddress,
-    provider,
-    eventType: "remove",
-    carbonAmount,
-    quoteAmount,
-    lpTokens,
-    timestamp: event.block.timestamp,
-    txHash: event.transaction.hash,
-  });
-});
-
-ponder.on("CarbonAMMPool:Swap", async ({ event, context }) => {
-  const { user: userAddr, carbonToQuote, amountIn, amountOut, fee, discountBps } = event.args;
-  const poolAddress = event.log.address;
-
-  // Get pool state before update
-  const pool = await context.db.find(schema.pool, { id: poolAddress });
-  const spotPriceBefore = pool?.spotPrice ?? 0n;
-
-  // Update pool reserves
-  if (pool) {
-    let newReserveCarbon = pool.reserveCarbon;
-    let newReserveQuote = pool.reserveQuote;
-
-    if (carbonToQuote) {
-      newReserveCarbon = pool.reserveCarbon + amountIn;
-      newReserveQuote = pool.reserveQuote - amountOut;
-    } else {
-      newReserveQuote = pool.reserveQuote + amountIn;
-      newReserveCarbon = pool.reserveCarbon - amountOut;
-    }
-
-    const newSpotPrice = newReserveCarbon > 0n
-      ? (newReserveQuote * 10n ** 18n) / newReserveCarbon
-      : 0n;
-
-    const volume = carbonToQuote ? amountOut : amountIn;
-
-    await context.db.update(schema.pool, { id: poolAddress }).set({
-      reserveCarbon: newReserveCarbon,
-      reserveQuote: newReserveQuote,
-      spotPrice: newSpotPrice,
-      totalVolume: pool.totalVolume + volume,
-      lastUpdated: event.block.timestamp,
-    });
-
-    // Create swap record
-    const swapId = `${event.transaction.hash}-${event.log.logIndex}`;
-    await context.db.insert(schema.swap).values({
-      id: swapId,
-      pool: poolAddress,
-      user: userAddr,
-      carbonToQuote,
-      amountIn,
-      amountOut,
-      fee,
-      discountBps: Number(discountBps),
-      spotPriceBefore,
-      spotPriceAfter: newSpotPrice,
-      timestamp: event.block.timestamp,
-      txHash: event.transaction.hash,
-    });
-
-    // Update protocol stats
-    const stats = await getOrCreateProtocolStats(context);
-    await context.db.update(schema.protocolStats, { id: 1 }).set({
-      totalSwaps: stats.totalSwaps + 1,
-      totalVolume: stats.totalVolume + volume,
-      lastUpdated: event.block.timestamp,
-    });
-  }
-
-  // Update user stats
-  const user = await getOrCreateUser(context, userAddr, event.block.timestamp);
-  await context.db.update(schema.user, { id: userAddr }).set({
-    totalTraded: user.totalTraded + amountIn,
-    lastActiveAt: event.block.timestamp,
-  });
-});
+// Note: CarbonAMMPool events are disabled until factory pattern is properly configured
+// Pool events (LiquidityAdded, LiquidityRemoved, Swap) will be tracked via
+// CarbonPoolFactory:PoolCreated once dynamic contract indexing is set up
