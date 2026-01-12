@@ -67,14 +67,17 @@ export const guardian = onchainTable(
     id: t.bigint().primaryKey(), // tokenId
     owner: t.hex().notNull(),
     tier: t.integer().notNull(),
+    path: t.integer().notNull(), // 0=OCEAN, 1=FOREST, 2=ENERGY, 3=TECH, 4=COMMUNITY, 5=WILDLIFE
     totalRetired: t.bigint().notNull(),
     nickname: t.text(),
+    isTransferable: t.boolean().notNull(),
     mintedAt: t.bigint().notNull(),
     lastUpdated: t.bigint().notNull(),
   }),
   (table) => ({
     ownerIdx: index().on(table.owner),
     tierIdx: index().on(table.tier),
+    pathIdx: index().on(table.path),
   })
 );
 
@@ -86,6 +89,39 @@ export const tierUpgrade = onchainTable("tier_upgrade", (t) => ({
   totalRetired: t.bigint().notNull(),
   timestamp: t.bigint().notNull(),
 }));
+
+// ============ Zone Stats (Sanctuary) ============
+
+export const zoneStats = onchainTable(
+  "zone_stats",
+  (t) => ({
+    id: t.integer().primaryKey(), // path/zone id (0-5)
+    name: t.text().notNull(),
+    totalRetired: t.bigint().notNull(),
+    contributorCount: t.integer().notNull(),
+    lastRetirementAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    totalRetiredIdx: index().on(table.totalRetired),
+  })
+);
+
+export const zoneContributor = onchainTable(
+  "zone_contributor",
+  (t) => ({
+    id: t.text().primaryKey(), // `${zoneId}-${userAddress}`
+    zoneId: t.integer().notNull(),
+    user: t.hex().notNull(),
+    totalRetired: t.bigint().notNull(),
+    retirementCount: t.integer().notNull(),
+    lastRetirementAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    zoneIdx: index().on(table.zoneId),
+    userIdx: index().on(table.user),
+    totalRetiredIdx: index().on(table.totalRetired),
+  })
+);
 
 // ============ Order Book ============
 

@@ -1,4 +1,5 @@
 import { createConfig } from "ponder";
+import { http } from "viem";
 
 // Import ABIs
 import CarbonCreditTokenAbi from "./abis/CarbonCreditToken.json";
@@ -21,7 +22,7 @@ export default createConfig({
   chains: {
     mantleSepolia: {
       id: 5003,
-      rpc: process.env.PONDER_RPC_URL_5003 || "https://rpc.sepolia.mantle.xyz",
+      rpc: http(process.env.PONDER_RPC_URL_5003 || "https://rpc.sepolia.mantle.xyz"),
     },
   },
   contracts: {
@@ -55,7 +56,5 @@ export default createConfig({
       address: POOL_FACTORY,
       startBlock: START_BLOCK,
     },
-    // Note: AMM Pool events are tracked via CarbonPoolFactory:PoolCreated
-    // Individual pool indexing can be added later if needed
   },
 });
